@@ -7,6 +7,7 @@ urls = (
     '/(api)/getslot', 'getSlot',
     '/show/(.*)', 'showSetup',
     '/(api)/show/(.*)', 'showSetup',
+    '/(api)/createhardware', 'setHardware',
 )
 
 class Common:
@@ -106,8 +107,42 @@ class showSetup(Common):
         return {'error': "Not a valid Request"}
 
 class setHardware(Common):
-    def POST(self):
-        raise NotImplemented
+    def POST(self, api):
+        try:
+            data = json.loads(web.data())
+        except:
+            return json.dumps({'error': "Not valid JSON"})
+
+        try:
+            hwid = self.cur.execute("Insert into hardware (required_slots, typ, name) values (%s, %s, %s) returning id;", (data['slots'], data['typ'], data['hwname']))
+        except:
+            return json.dumps({'error': "Not a valid Hardware"})
+
+        try:
+            sid = int(data['firstslot'])
+            for i in range(data['slots']):
+                self.cur.execute("Update slots set hardware_id = %s where rack_id = %s and id = %s;", (hwid, data['rackid'], sid))
+                sid += 1
+        except:
+            return json.dumps({'error': "Not a rack layout"})
+
+        portnumber = 0
+        try:
+            for i in data['networkport']:
+                try:
+                    nid = self.cur.execute("insert into networkport (hardware_id, typ, portname) values (%s, %s, %s);", (hwid, i['typ'], "eth{0}".format(portnumber)))
+                    portnumber += 1
+                    if 'connection' in i.keys():
+                        try:
+                            self.cur.execute("insert into networkportconnection (incoming, outgoing) values (%s, %s);", (i['connection'], nid))
+                        except:
+                            return json.dumps({'error': "eth{0} not a valid connection"})
+                except:
+                    return json.dumps({'error': "eth{0} not a valid network typ"})
+        except:
+            return json.dumps({'error': "not a valid network card"})
+                
+        return json.dump({'success': 'Hardware {0} successful created'.format(data['hwname'])})
 
 app = web.application(urls, globals())
 if __name__ == "__main__":
