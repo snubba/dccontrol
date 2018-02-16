@@ -1,4 +1,5 @@
 #!/usr/bin/python
+#-*- coding: utf-8 -*-
 import web
 import json, psycopg2
 
@@ -20,16 +21,37 @@ class getSlot(Common):
         except:
             return json.dumps({'error': "Not valid JSON"})
 
-        try:
-            if data['slots']:
-                slots = int(data['slots'])
-            else:
-                slots = 1
-            self.cur.execute("Select dc.name, r.name, rw.name, ra.name, s.id from datacenter dc inner join rooms r on d.id=r.dc_id inner join rows rw on rw.room_id=r.id inner join rack ra on ra.row_id=rw.id inner join slot s on s.rack_id=ra.id inner join (select h.id from hardware h inner join networkports np on h.id=np.hardware_port inner join protvlan pv on pv.network_port=np.id where np.incoming = 'true' and np.id not in (Select incoming from networkportconnection) abd pv.vlan_id = %s) hw on hw.id=s.hardware_id where dc.name = %s", (data['vlan'],data['datacenter']))
-            slot = self.cur.fetchone()
-        except:
-            return json.dumps({'error': "Invalid Request"})
-
+        if data['slots']:
+            number = int(data['slots'])
+            raise NotImplemented
+        else:
+            try:
+                self.sur.execute("Select dc.name, r.name, rw.name, ra.name, s.id \
+                            from datacenter dc \
+                            inner join rooms r on dc.id=r.dc_id \
+                            inner join rows rw on rw.room_id=r.id \
+                            inner join rack ra on rw.id=ra.row_id \
+                            inner join slot s on ra.id=s.rack_id \
+                                where \
+                                s.rack_id in (\
+                                    select s.rack_id from \
+                                    slot s \
+                                    inner join hardware h on h.id = s.hardware_id \
+                                    inner join networkport np on h.id=np.hardware_id \
+                                    inner join protvlan pv on pv.network_port=np.id \
+                                    where \
+                                        np.incoming = 'true' \
+                                        and np.id not in (\
+                                            Select incoming from networkportconnection) \
+                                        and pv.vlan_id = %s\
+                                ) \
+                                and dc.name = %s \
+                                and hardware_id = '-1' \
+                            group by dc.name, r.name, rw.name, ra.name, s.id;", (data['vlan'],data['datacenter']))
+                slot = self.cur.fetchone()
+            except:
+                return json.dumps({'error': "Invalid Request"})
+    
         return json.dumps({'datacenter': slot[0], 'room': slot[1], 'row': slot[2], 'rack': slot[3], 'slot': slot[4]})
 
 class showSetup(Common):
@@ -57,11 +79,11 @@ class showSetup(Common):
 
     def returnBundle(self, request):
         if len(request) == 1:
-            #try:
-            self.cur.execute("Select name, id from rooms where dc_id = %s;", (request[0],))
-            return {'rooms': self.parseSQL(self.cur.fetchall()), 'datacenterid': request[0]}
-            #except:
-            #    pass
+            try:
+                self.cur.execute("Select name, id from rooms where dc_id = %s;", (request[0],))
+                return {'rooms': self.parseSQL(self.cur.fetchall()), 'datacenterid': request[0]}
+            except:
+                pass
         elif len(request) == 2:
             try:
                 self.cur.execute("Select name, id from rows where room_id = %s;", (request[1],))
@@ -75,11 +97,11 @@ class showSetup(Common):
             except:
                 pass
         elif len(request) == 4:
-            #try:
-            self.cur.execute("select hw.name, s.id from slot s inner join hardware hw on hw.id=s.hardware_id where rack_id = %s;", (request[3],))
-            return {'slots': self.parseSQL(self.cur.fetchall()), 'rackid': request[3], 'rowid': request[2], 'roomid': request[1], 'datacenterid': request[0]}
-            #except:
-            #    pass
+            try:
+                self.cur.execute("select hw.name, s.id from slot s inner join hardware hw on hw.id=s.hardware_id where rack_id = %s;", (request[3],))
+                return {'slots': self.parseSQL(self.cur.fetchall()), 'rackid': request[3], 'rowid': request[2], 'roomid': request[1], 'datacenterid': request[0]}
+            except:
+                pass
         
         return {'error': "Not a valid Request"}
 
